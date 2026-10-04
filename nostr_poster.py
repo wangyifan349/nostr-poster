@@ -72,6 +72,24 @@ RELAYS = [
     "wss://relay.primal.net",
 ]
 
+# Tor auto-detection: proxy=None (default) probes the local machine for a
+# running Tor SOCKS5 proxy (port 9150 first, then 9050) and uses it if found;
+# proxy=False forces a direct connection; proxy=(host, port) sets one manually.
+def detect_tor_proxy(host: str = "127.0.0.1", timeout: float = 1.0):
+    """Return (host, port) of a live local Tor SOCKS5 proxy, or None."""
+    for port in (9150, 9050):
+        try:
+            sock = socket.create_connection((host, port), timeout=timeout)
+            try:
+                sock.sendall(b"\x05\x01\x00")
+                if sock.recv(2) == b"\x05\x00":
+                    return (host, port)
+            finally:
+                sock.close()
+        except Exception:
+            continue
+    return None
+
 BACKUP_FILE_DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys_backup.txt")
 
 _BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
@@ -416,6 +434,10 @@ class _WebSocket:
 def publish_event(event: dict, relays=None, timeout=12.0, proxy=None) -> dict:
     """Publish an event to the relay list, return {relay: ok/msg}"""
     relays = relays or RELAYS
+    if proxy is None:
+        proxy = detect_tor_proxy()
+    elif proxy is False:
+        proxy = None
     results = {}
     for url in relays:
         try:
